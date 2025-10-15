@@ -1,0 +1,175 @@
+﻿@page
+@using Tesseract
+@model OcrWorkerDemo.Pages.IndexModel
+@{
+    ViewData["Title"] = "OCR Worker Demo (.NET 8)";
+}
+
+<h1 class="display-6">OCR Worker Demo (.NET 8)</h1>
+
+<form id="ocrForm" method="post" enctype="multipart/form-data" class="mb-4">
+    <div class="mb-3">
+        <label class="form-label">PDF file</label>
+        <input class="form-control" type="file" name="Pdf" accept="application/pdf" required />
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-3">
+            <label class="form-label">Preset</label>
+            <select class="form-select" name="Preset" id="Preset">
+                @{
+                    string[] presets = new[] { "Default", "LowQualityScan", "Photo", "Form" };
+                    foreach (var p in presets)
+                    {
+                        var selected = (p == Model.Preset) ? "selected" : null;
+                        <option value="@p" selected="@selected">@p</option>
+                    }
+                }
+            </select>
+            <div class="form-text">Applies sensible defaults (DPI/PSM/filters).</div>
+        </div>
+
+        <div class="col-md-2">
+            <label class="form-label">DPI</label>
+            <input class="form-control" type="number" name="Dpi" id="Dpi" value="@Model.Tweaks.Dpi" min="72" max="600" />
+            <div class="form-text">300–400 is common; 600 for very small text.</div>
+        </div>
+
+        <div class="col-md-2">
+            <label class="form-label">Max pages</label>
+            <input class="form-control" type="number" name="MaxPages" id="MaxPages" value="@Model.Tweaks.MaxPages" min="1" max="200" />
+        </div>
+
+        <div class="col-md-3">
+            <label class="form-label">Language</label>
+            <input class="form-control" type="text" name="Language" id="Language" value="@Model.Tweaks.Language" placeholder="deu, eng, deu+eng" />
+            <div class="form-text">Combine multiple with <code>+</code>.</div>
+        </div>
+
+        <div class="col-md-2">
+            <label class="form-label">OEM (engine)</label>
+            <select class="form-select" name="Oem" id="Oem">
+                @foreach (var o in Enum.GetNames(typeof(EngineMode)))
+                {
+                    var selected = o == Model.Tweaks.EngineMode.ToString() ? "selected" : null;
+                    <option value="@o" selected="@selected">@o</option>
+                }
+            </select>
+        </div>
+
+        <div class="col-md-2">
+            <label class="form-label">PSM (segmentation)</label>
+            <select class="form-select" name="Psm" id="Psm">
+                @foreach (var p in Enum.GetNames(typeof(PageSegMode)))
+                {
+                    var selected = p == Model.Tweaks.PageSegMode.ToString() ? "selected" : null;
+                    <option value="@p" selected="@selected">@p</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="form-check form-switch mt-3">
+        <input class="form-check-input" type="checkbox" id="Deskew" name="UseDeskew" @(Model.Tweaks.UseDeskew ? "checked" : null) />
+        <label class="form-check-label" for="Deskew">Deskew — correct skew (scans)</label>
+    </div>
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="Adaptive" name="UseAdaptiveThreshold" @(Model.Tweaks.UseAdaptiveThreshold ? "checked" : null) />
+        <label class="form-check-label" for="Adaptive">Adaptive Threshold — local binarization (photos/uneven lighting)</label>
+    </div>
+    <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" id="Sharpen" name="UseSharpen" @(Model.Tweaks.UseSharpen ? "checked" : null) />
+        <label class="form-check-label" for="Sharpen">Sharpen — light sharpening (use sparingly)</label>
+    </div>
+
+    <button id="submitBtn" class="btn btn-primary" type="submit">Run OCR</button>
+</form>
+
+@if (Model.PageInfos?.Any() == true)
+{
+    <hr />
+    <h2>Pages & confidence</h2>
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr><th>Page</th><th>Confidence</th><th>Preview</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var info in Model.PageInfos)
+            {
+                var modalId = $"prev-{info.PageIndex}";
+                <tr>
+                    <td>@info.PageIndex</td>
+                    <td>@String.Format("{0:P0}", info.MeanConfidence)</td>
+                    <td>
+                        @if (!string.IsNullOrEmpty(info.ThumbDataUrl))
+                        {
+                            <a href="#" data-bs-toggle="modal" data-bs-target="#@modalId" title="Click to enlarge">
+                                <img src="@info.ThumbDataUrl" alt="preview @info.PageIndex" style="max-width:240px;height:auto;" />
+                            </a>
+
+                            <div class="modal fade" id="@modalId" tabindex="-1" aria-hidden="true">
+                                <div class="modal-dialog modal-xl modal-dialog-centered">
+                                    <div class="modal-content">
+                                        <div class="modal-body p-0">
+                                            <img src="@info.FullDataUrl" alt="full preview @info.PageIndex" style="width:100%;height:auto;" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (!string.IsNullOrEmpty(Model.ResultText))
+{
+    <h2>Result text</h2>
+    <pre style="white-space:pre-wrap">@Model.ResultText</pre>
+}
+
+<!-- Busy overlay -->
+<div id="busy" style="display:none;position:fixed;inset:0;background:rgba(255,255,255,.7);z-index:1055;">
+    <div class="d-flex justify-content-center align-items-center h-100">
+        <div class="text-center">
+            <div class="spinner-border" role="status" aria-hidden="true"></div>
+            <div class="mt-2">Running OCR…</div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // Preset → update fields (mirrors OcrPresets.Apply)
+        const presetMap = {
+          "Default":        { dpi: 300, deskew: false, adaptive: false, sharpen: false, psm: "Auto" },
+          "LowQualityScan": { dpi: 400, deskew: true,  adaptive: true,  sharpen: true,  psm: "SingleColumn" },
+          "Photo":          { dpi: 500, deskew: true,  adaptive: true,  sharpen: true,  psm: "Auto" },
+          "Form":           { dpi: 300, deskew: true,  adaptive: false, sharpen: false, psm: "SparseText" }
+        };
+
+        const byId = id => document.getElementById(id);
+
+        // Reflect preset changes immediately in the UI (server still validates)
+        byId('Preset').addEventListener('change', e => {
+          const p = presetMap[e.target.value];
+          if (!p) return;
+          byId('Dpi').value = p.dpi;
+          byId('Psm').value = p.psm;
+          byId('Deskew').checked = p.deskew;
+          byId('Adaptive').checked = p.adaptive;
+          byId('Sharpen').checked = p.sharpen;
+        });
+
+        // Busy overlay during submit
+        const form = document.getElementById('ocrForm');
+        const busy = document.getElementById('busy');
+        const btn  = document.getElementById('submitBtn');
+        form.addEventListener('submit', () => {
+          busy.style.display = 'block';
+          btn.disabled = true;
+        });
+    </script>
+}
