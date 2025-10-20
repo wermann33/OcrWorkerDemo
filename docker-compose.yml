@@ -1,0 +1,8 @@
+﻿services:
+  ocr-app:
+    build: .
+    container_name: ocr-worker-demo
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./tessdata:/app/tessdata
